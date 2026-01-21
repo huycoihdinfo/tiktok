@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Săn Kèo Vercel</title>
+    <style>
+        body {
+            background-color: #121212;
+            color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        /* Thông tin User */
+        .user-name {
+            color: #fe2c55;
+            font-size: 1.8rem;
+            font-weight: bold;
+            text-decoration: none;
+            margin-bottom: 5px;
+        }
+        .stats {
+            color: #888;
+            font-size: 1rem;
+            margin-bottom: 20px;
+        }
+
+        /* Đồng hồ đếm ngược */
+        .countdown-box {
+            font-size: 4rem;
+            font-weight: bold;
+            font-family: monospace;
+            padding: 20px 40px;
+            border-radius: 12px;
+            background: #1e1e1e;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            min-width: 300px;
+            text-align: center;
+            border: 2px solid #333;
+            transition: all 0.1s;
+        }
+        .green-mode { color: #00ff00; border-color: #00ff00; }
+        .red-mode { color: #ff0000; border-color: #ff0000; background: #fff; }
+
+        /* Nút Chỉnh Delay (Delta) */
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            align-items: center;
+        }
+        .btn-adj {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 5px;
+            font-weight: bold;
+            cursor: pointer;
+            color: white;
+            font-size: 1rem;
+        }
+        .btn-minus { background: #dc3545; }
+        .btn-plus { background: #28a745; }
+        .delta-display { font-family: monospace; font-size: 1.2rem; min-width: 80px; text-align: center;}
+
+        /* Nút Mở App */
+        .claim-btn {
+            display: none; /* Ẩn mặc định */
+            margin-top: 30px;
+            padding: 15px 50px;
+            background-color: #fe2c55;
+            color: white;
+            font-size: 1.5rem;
+            font-weight: bold;
+            text-decoration: none;
+            border-radius: 50px;
+            box-shadow: 0 0 20px rgba(254, 44, 85, 0.6);
+            animation: pulse 0.8s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        .sync-status {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 0.8rem;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="sync-status" id="syncStatus">📡 Đang kết nối Vercel...</div>
+
+    <a id="userLink" class="user-name" href="#" target="_blank">Loading...</a>
+    <div id="stats" class="stats">...</div>
+
+    <div id="timer" class="countdown-box">Wait...</div>
+
+    <a id="claimBtn" href="#" class="claim-btn">MỞ TIKTOK</a>
+
+    <div class="controls">
+        <button class="btn-adj btn-minus" onclick="adjustDelta(-50)">-0.05</button>
+        <button class="btn-adj btn-minus" onclick="adjustDelta(-10)">-0.01</button>
+        <span id="deltaText" class="delta-display">0.00s</span>
+        <button class="btn-adj btn-plus" onclick="adjustDelta(10)">+0.01</button>
+        <button class="btn-adj btn-plus" onclick="adjustDelta(50)">+0.05</button>
+    </div>
+
+    <script>
+        // ============================================
+        // 1. CẤU HÌNH & BIẾN TOÀN CỤC
+        // ============================================
+        let serverTimeOffset = 0; // Độ lệch giờ Server (ms)
+        let isSynced = false;
+        
+        // Lấy delta chỉnh tay từ localStorage (để F5 không mất)
+        let manualDelta = parseFloat(localStorage.getItem('my_delta') || '0'); 
+        updateDeltaUI();
+
+        // ============================================
+        // 2. LOGIC ĐỒNG BỘ GIỜ (VERCEL API)
+        // ============================================
+        async function syncWithVercel() {
+            try {
+                const statusEl = document.getElementById('syncStatus');
+                const z = Math.floor(Math.random() * 50) + 50; // Random z 50-100
+                const t1 = performance.now();
+
+                // Gọi API Serverless của chính mình
+                // Lưu ý: Đường dẫn tương đối /api/ping để chạy trên Vercel
+                const response = await fetch(`/api/ping?z=${z}`);
+                const encodedText = await response.text();
+                const t2 = performance.now();
+
+                // GIẢI MÃ (Logic Junb)
+                // ASCII - 1 - 2z
+                const serverTimeStr = encodedText.split('').map(char => {
+                    return String(char.charCodeAt(0) - 1 - (2 * z));
+                }).join('');
+                
+                const serverTimeMs = parseInt(serverTimeStr);
+
+                if (isNaN(serverTimeMs)) throw new Error("Lỗi giải mã");
+
+                // Tính toán Offset (NTP Algorithm đơn giản hóa)
+                const rtt = t2 - t1;
+                const clientTimeNow = Date.now();
+                // Giờ server ước tính tại thời điểm nhận gói tin
+                const estimatedServerTime = serverTimeMs + (rtt / 2);
+                
+                serverTimeOffset = estimatedServerTime - clientTimeNow;
+                isSynced = true;
+
+                statusEl.innerHTML = `✅ Đã Sync Vercel (RTT: ${rtt.toFixed(0)}ms)`;
+                statusEl.style.color = '#0f0';
+                console.log(`Sync Success: Offset=${serverTimeOffset.toFixed(2)}ms, RTT=${rtt.toFixed(2)}ms`);
+
+            } catch (e) {
+                console.error("Sync Failed:", e);
+                document.getElementById('syncStatus').innerHTML = `⚠️ Dùng giờ máy tính (Sync lỗi)`;
+                // Vẫn cho chạy tiếp bằng giờ máy tính (offset = 0)
+            }
+        }
+
+        // Sync ngay khi mở và lặp lại mỗi 10s
+        syncWithVercel();
+        setInterval(syncWithVercel, 10000);
+
+        // ============================================
+        // 3. XỬ LÝ URL PARAMS
+        // ============================================
+        const params = new URLSearchParams(window.location.search);
+
+        // Lấy thông tin từ URL (từ tool Python)
+        const username = params.get('username') || 'Unknown';
+        const targetTimeSec = parseInt(params.get('time') || '0'); 
+        const targetTimeMs = targetTimeSec * 1000;
+        
+        const matxem = params.get('matxem') || params.get('view') || '0';
+        const people = params.get('people') || '0';
+        const openLink = params.get('opentiktok') || '#';
+
+        // Render thông tin tĩnh
+        document.getElementById('userLink').textContent = `@${username}`;
+        document.getElementById('userLink').href = `https://www.tiktok.com/@${username}`;
+        document.getElementById('stats').textContent = `👁️ ${matxem} đang xem | 🎁 ${people} suất`;
+        document.getElementById('claimBtn').href = openLink;
+
+        // ============================================
+        // 4. VÒNG LẶP ĐẾM NGƯỢC (CORE)
+        // ============================================
+        const timerEl = document.getElementById('timer');
+        const claimBtn = document.getElementById('claimBtn');
+        let isFinished = false;
+
+        function updateTimer() {
+            // Giờ hiện tại = Giờ máy + Offset Server
+            const now = Date.now() + serverTimeOffset;
+
+            // Thời gian còn lại = Đích - (Hiện tại - Chỉnh tay)
+            // manualDelta dương (+) nghĩa là muốn đồng hồ chạy nhanh hơn (giảm thời gian còn lại)
+            // manualDelta âm (-) nghĩa là muốn đồng hồ chạy chậm lại (tăng thời gian còn lại)
+            const remainingMs = targetTimeMs - (now - manualDelta);
+            const remainingSec = remainingMs / 1000;
+
+            if (remainingSec <= 0) {
+                // HẾT GIỜ
+                timerEl.textContent = "0.00";
+                timerEl.classList.remove('green-mode');
+                timerEl.classList.add('red-mode'); // Chuyển màu đỏ/trắng
+                timerEl.style.color = '#000'; // Chữ đen nền trắng cho dễ nhìn lúc chớp
+
+                if (!isFinished) {
+                    claimBtn.style.display = "inline-block"; // Hiện nút
+                    // Tự động mở link nếu muốn (bỏ comment dòng dưới)
+                    // window.location.href = openLink; 
+                    isFinished = true;
+                }
+                return;
+            }
+
+            // CÒN GIỜ
+            timerEl.textContent = remainingSec.toFixed(2);
+            timerEl.classList.add('green-mode');
+        }
+
+        // Chạy update mỗi 20ms (50fps)
+        setInterval(updateTimer, 20);
+
+        // ============================================
+        // 5. CÁC HÀM TIỆN ÍCH
+        // ============================================
+        function adjustDelta(val) {
+            manualDelta += val;
+            localStorage.setItem('my_delta', manualDelta);
+            updateDeltaUI();
+        }
+
+        function updateDeltaUI() {
+            const sec = manualDelta / 1000;
+            const el = document.getElementById('deltaText');
+            el.innerHTML = `<b>${sec > 0 ? '+' : ''}${sec.toFixed(2)}s</b>`;
+            el.style.color = sec === 0 ? '#fff' : (sec > 0 ? '#28a745' : '#dc3545');
+        }
+        
+        // Fix lỗi click link trên mobile
+        claimBtn.addEventListener('click', (e) => {
+            // Force mở link
+            setTimeout(() => {
+                window.location.href = openLink;
+            }, 100);
+        });
+
+    </script>
+</body>
+</html>
